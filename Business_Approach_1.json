@@ -1,0 +1,216 @@
+
+/** load yelp and climate files in ODS **/
+use database Yelp_Reviews_DB;
+use schema ODS;
+
+--create sequences to be used
+
+create or replace sequence seq_address_id;
+create or replace sequence seq_tip_id;
+create or replace sequence seq_covid_id;
+create or replace sequence seq_checkin_id;
+
+--- Creating ODS tables for Climate Data
+
+//temperature ODS
+CREATE OR REPLACE TABLE TEMPERATURE (
+date_t DATE,
+min_t number,
+max_t number,
+normal_min float,
+normal_max float,
+constraint pk_date_t primary key(date_t)
+);
+
+//precipitation ODS
+CREATE OR REPLACE TABLE PRECIPITATION (
+date_p date,
+precipitation float,
+precipitation_normal float,
+constraint pk_date_p primary key(date_p)
+);
+
+
+--- Creating ODS tables for Yelp Data
+
+/** inserting climate data into ODS tables **/
+
+insert into TEMPERATURE (
+DATE_T,
+MIN_T,
+MAX_T,
+NORMAL_MIN,
+NORMAL_MAX)
+SELECT
+TRY_TO_DATE(DATE_T,'YYYYMMDD'),
+TRY_TO_NUMBER(MIN_T),
+TRY_TO_NUMBER(MAX_T),
+TRY_CAST(NORMAL_MIN AS FLOAT),
+TRY_CAST(NORMAL_MAX AS FLOAT)
+FROM YELP_REVIEWS_DB.STAGING.TEMPERATURE;
+
+select * from TEMPERATURE;
+
+insert into precipitation (
+date_p,
+precipitation,
+precipitation_normal)
+SELECT
+TO_DATE(date_p, 'YYYYMMDD'),
+TRY_CAST(precipitation as float),
+TRY_CAST(precipitation_normal AS FLOAT)
+FROM YELP_REVIEWS_DB.STAGING.precipitation;
+
+select * from precipitation;
+
+
+--- Create Address Table , followed by insert statement
+
+create or replace table Address (
+address_id number default seq_address_id.nextval,
+address String,
+postal_code string,
+city string,
+state string,
+latitude float,
+longitude float,
+constraint pk_address_id primary key(address_id)
+)
+insert into Address(address_id,address,postal_code,city,state,latitude,longitude)
+select
+seq_address_id.nextval,
+parse_json($1):address, 
+parse_json($1):postal_code, 
+parse_json($1):city, 
+parse_json($1):state, 
+parse_json($1):latitude, 
+parse_json($1):longitude
+from YELP_REVIEWS_DB.staging.business;
+-- select * from Address order by address_id;
+
+
+--- Create users table , followed by insert statement
+
+create or replace table users(
+  user_id String,
+  name String,
+  review_count Number,
+  yelping_since Date,
+  average_stars float,
+  useful Number,
+  cool Number,
+  elite variant,
+  fans Number,
+  funny Number,
+  friends variant,
+  compliment_cool Number,
+  compliment_cute Number,
+  compliment_funny Number,
+  compliment_hot Number,
+  compliment_list Number,
+  compliment_more Number,
+  compliment_note Number,
+  compliment_photos Number,
+  compliment_plain Number,
+  compliment_profile Number,
+  compliment_writer Number, 
+  constraint pk_user_id primary key(user_id)  
+)
+  
+  
+insert into users
+select
+parse_json($1):  user_id,
+parse_json($1):  name,
+parse_json($1):  review_count,
+parse_json($1):  yelping_since,
+parse_json($1):  average_stars,
+parse_json($1):  useful,
+parse_json($1):  cool,
+parse_json($1):  elite,
+parse_json($1):  fans,
+parse_json($1):  funny,
+parse_json($1):  friends,
+parse_json($1):  compliment_cool,
+parse_json($1):  compliment_cute,
+parse_json($1):  compliment_funny,
+parse_json($1):  compliment_hot,
+parse_json($1):  compliment_list,
+parse_json($1):  compliment_more,
+parse_json($1):  compliment_note,
+parse_json($1):  compliment_photos,
+parse_json($1):  compliment_plain,
+parse_json($1):  compliment_profile,
+parse_json($1):  compliment_writer
+from YELP_REVIEWS_DB.staging.users;
+
+--select * from users order by review_count desc;
+
+--- Create business_tmp table , followed by insert statement
+
+create or replace table business_tmp(
+business_id string,
+name string,
+review_count number,
+stars float,
+is_open number,
+attributes variant,
+categories variant,
+hours variant,
+address string,
+postal_code string,
+city string,
+state string,
+latitude float,
+longitude float
+);
+insert into business_tmp
+select
+parse_json($1):business_id, 
+parse_json($1):name, 
+parse_json($1):review_count, 
+parse_json($1):stars,
+parse_json($1):is_open, 
+parse_json($1):attributes, 
+parse_json($1):categories, 
+parse_json($1):hours, 
+parse_json($1):address, 
+parse_json($1):city,
+parse_json($1):postal_code, 
+parse_json($1):state, 
+parse_json($1):latitude, 
+parse_json($1):longitude
+from YELP_REVIEWS_DB.staging.business;
+
+select * from business_tmp order by REVIEW_COUNT desc;
+
+--- Create main business table , followed by insert statement
+
+create or replace table business(
+business_id string,
+name string,
+review_count number,
+stars float,  
+address_id number,
+is_open number,
+attributes variant,
+categories variant,
+hours variant,
+constraint pk_business_id primary key(business_id),
+CONSTRAINT fk_address_id FOREIGN KEY (address_id) REFERENCES address(address_id)
+);
+insert into business
+select tmp.business_id,
+tmp.name,
+tmp.review_count ,
+tmp.stars ,  
+loc.address_id ,
+tmp.is_open ,
+tmp.attributes ,
+tmp.categories ,
+tmp.hours 
+from business_tmp as tmp
+join address as loc
+on loc.address=tmp.address;
+
+
